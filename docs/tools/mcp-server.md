@@ -627,13 +627,13 @@ This can be included in `settings.json` under `mcpServers` with:
 Once a prompt is discovered, you can invoke it using its name as a slash command. The CLI will automatically handle parsing arguments.
 
 ```bash
-/summarize_commits --count=5
+/poem-writer --title="Gemini CLI" --mood="reverent"
 ```
 
 or, using positional arguments:
 
 ```bash
-/summarize_commits 5
+/poem-writer "Gemini CLI" reverent
 ```
 
 When you run this command, the Gemini CLI executes the `prompts/get` method on the MCP server with the provided arguments. The server is responsible for substituting the arguments into the prompt template and returning the final prompt text. The CLI then sends this prompt to the model for execution. This provides a convenient way to automate and share common workflows.
