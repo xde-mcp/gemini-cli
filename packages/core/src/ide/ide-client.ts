@@ -8,19 +8,11 @@ import { ideContext, OpenFilesNotificationSchema } from '../ide/ideContext.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-import { z } from 'zod';
-
 const logger = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   debug: (...args: any[]) =>
     console.debug('[DEBUG] [ImportProcessor]', ...args),
 };
-
-const IdeInfoResponseSchema = z.object({
-  structuredContent: z.object({
-    ideName: z.string(),
-  }),
-});
 
 export type IDEConnectionState = {
   status: IDEConnectionStatus;
@@ -105,20 +97,4 @@ export class IdeClient {
       logger.debug('Failed to connect to MCP server:', error);
     }
   }
-
-  async getIdeName(): Promise<string | undefined> {
-    const result = await this.client?.callTool({
-      name: 'getIdeInfo',
-    });
-
-    const parsed = IdeInfoResponseSchema.safeParse(result);
-    if (parsed.success) {
-      return parsed.data.structuredContent.ideName;
-    } else {
-      logger.debug('Failed to parse getIdeInfo response:', parsed.error);
-      return undefined;
-    }
-  }
 }
-
-export const ideClient = new IdeClient();

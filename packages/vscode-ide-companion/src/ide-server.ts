@@ -15,7 +15,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { Server as HTTPServer } from 'node:http';
 import { RecentFilesManager } from './recent-files-manager.js';
-import { z } from 'zod';
 
 const MCP_SESSION_ID_HEADER = 'mcp-session-id';
 const IDE_SERVER_PORT_ENV_VAR = 'GEMINI_CLI_IDE_SERVER_PORT';
@@ -245,30 +244,5 @@ const createMcpServer = () => {
     },
     { capabilities: { logging: {} } },
   );
-  server.registerTool(
-    'getIdeInfo',
-    {
-      description: 'Gets information about the IDE',
-      inputSchema: {},
-      outputSchema: {
-        ideName: z.string(),
-      },
-    },
-    async () => {
-      const structuredContent = {
-        ideName: 'VSCode',
-      };
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(structuredContent, null, 2),
-          },
-        ],
-        structuredContent,
-      };
-    },
-  );
-
   return server;
 };
