@@ -14,12 +14,27 @@ test('should be able to search the web', async (t) => {
 
   await rig.run(`what is the weather in London`);
 
-  // Give the collector time to write to the log file.
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const poll = async (predicate, timeout, interval) => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      if (predicate()) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+    return false;
+  };
 
-  const toolLogs = rig.readToolLogs();
-  const searchToolCalls = toolLogs.filter(
-    (log) => log.toolRequest.name === 'google_web_search',
+  const foundToolCall = await poll(
+    () => {
+      const toolLogs = rig.readToolLogs();
+      return toolLogs.some(
+        (log) => log.toolRequest.name === 'google_web_search',
+      );
+    },
+    5000, // 5 seconds
+    500, // 500ms
   );
-  assert.ok(searchToolCalls.length > 0, 'Expected at least one call to google_web_search');
+
+  assert.ok(foundToolCall, 'Expected to find a call to google_web_search');
 });

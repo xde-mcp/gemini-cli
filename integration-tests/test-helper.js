@@ -123,13 +123,15 @@ export class TestRig {
       return [];
     }
     const content = readFileSync(logFilePath, 'utf-8');
+    // This regex is designed to find the Body of a log record and extract the tool name.
     const toolLogRegex = /Body: Str\((Tool call: .*)\)/g;
     const matches = content.matchAll(toolLogRegex);
     const logs = [];
     for (const match of matches) {
       try {
-        const logDataString = match[1].replace(/\\"/g, '"');
+        const logDataString = match[1];
         const parts = logDataString.split(' ');
+        // The tool name is expected to be in a format like "tool:google_web_search."
         const toolName = parts[2].replace('.', '');
         logs.push({ toolRequest: { name: toolName, query: '' } });
       } catch (e) {

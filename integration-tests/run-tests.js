@@ -67,188 +67,180 @@ service:
   collectorProcess.stdout.pipe(collectorLogStream);
   collectorProcess.stderr.pipe(collectorLogStream);
 
-  let collectorReady = false;
   try {
     await waitForPort(4317, 20000);
-    collectorReady = true;
     console.log('Local telemetry collector is running for tests.');
   } catch (e) {
     console.error('Failed to start telemetry collector:', e);
     collectorProcess.kill();
     process.exit(1);
   }
-  // --- End Telemetry Setup ---
 
-  if (process.env.GEMINI_SANDBOX === 'docker' && !process.env.IS_DOCKER) {
-    console.log('Building sandbox for Docker...');
-    const buildResult = spawnSync('npm', ['run', 'build:all'], {
-      stdio: 'inherit',
-    });
-    if (buildResult.status !== 0) {
-      console.error('Sandbox build failed.');
-      process.exit(1);
-    }
-  }
-
-  const runId = `${Date.now()}`;
-  const runDir = join(integrationTestsDir, runId);
-
-  mkdirSync(runDir, { recursive: true });
-
-  const args = process.argv.slice(2);
-  const keepOutput =
-    process.env.KEEP_OUTPUT === 'true' || args.includes('--keep-output');
-  if (keepOutput) {
-    const keepOutputIndex = args.indexOf('--keep-output');
-    if (keepOutputIndex > -1) {
-      args.splice(keepOutputIndex, 1);
-    }
-    console.log(`Keeping output for test run in: ${runDir}`);
-  }
-
-  const verbose = args.includes('--verbose');
-  if (verbose) {
-    const verboseIndex = args.indexOf('--verbose');
-    if (verboseIndex > -1) {
-      args.splice(verboseIndex, 1);
-    }
-  }
-
-  const testPatterns =
-    args.length > 0
-      ? args.map((arg) => `integration-tests/${arg}.test.js`)
-      : ['integration-tests/*.test.js'];
-  const testFiles = glob.sync(testPatterns, { cwd: rootDir, absolute: true });
-
-  for (const testFile of testFiles) {
-    const testFileName = basename(testFile);
-    console.log(`\tFound test file: ${testFileName}`);
-  }
-
-  const MAX_RETRIES = 3;
-  let allTestsPassed = true;
-
-  for (const testFile of testFiles) {
-    const testFileName = basename(testFile);
-    const testFileDir = join(runDir, testFileName);
-    mkdirSync(testFileDir, { recursive: true });
-
-    console.log(
-      `------------- Running test file: ${testFileName} ------------------------------`,
-    );
-
-    let attempt = 0;
-    let testFilePassed = false;
-    let lastStdout = [];
-    let lastStderr = [];
-
-    while (attempt < MAX_RETRIES && !testFilePassed) {
-      attempt++;
-      if (attempt > 1) {
-        console.log(
-          `--- Retrying ${testFileName} (attempt ${attempt} of ${MAX_RETRIES}) ---`,
-        );
-      }
-
-      const nodeArgs = ['--test'];
-      if (verbose) {
-        nodeArgs.push('--test-reporter=spec');
-      }
-      nodeArgs.push(testFile);
-
-      const child = spawn('node', nodeArgs, {
-        stdio: 'pipe',
-        env: {
-          ...process.env,
-          GEMINI_CLI_INTEGRATION_TEST: 'true',
-          INTEGRATION_TEST_FILE_DIR: testFileDir,
-          KEEP_OUTPUT: keepOutput.toString(),
-          VERBOSE: verbose.toString(),
-          TEST_FILE_NAME: testFileName,
-        },
+  try {
+    if (process.env.GEMINI_SANDBOX === 'docker' && !process.env.IS_DOCKER) {
+      console.log('Building sandbox for Docker...');
+      const buildResult = spawnSync('npm', ['run', 'build:all'], {
+        stdio: 'inherit',
       });
-
-      let outputStream;
-      if (keepOutput) {
-        const outputFile = join(testFileDir, `output-attempt-${attempt}.log`);
-        outputStream = createWriteStream(outputFile);
-        console.log(`Output for ${testFileName} written to: ${outputFile}`);
+      if (buildResult.status !== 0) {
+        console.error('Sandbox build failed.');
+        process.exit(1);
       }
+    }
 
-      const stdout = [];
-      const stderr = [];
+    const runId = `${Date.now()}`;
+    const runDir = join(integrationTestsDir, runId);
 
-      child.stdout.on('data', (data) => {
+    mkdirSync(runDir, { recursive: true });
+
+    const args = process.argv.slice(2);
+    const keepOutput =
+      process.env.KEEP_OUTPUT === 'true' || args.includes('--keep-output');
+    if (keepOutput) {
+      const keepOutputIndex = args.indexOf('--keep-output');
+      if (keepOutputIndex > -1) {
+        args.splice(keepOutputIndex, 1);
+      }
+      console.log(`Keeping output for test run in: ${runDir}`);
+    }
+
+    const verbose = args.includes('--verbose');
+    if (verbose) {
+      const verboseIndex = args.indexOf('--verbose');
+      if (verboseIndex > -1) {
+        args.splice(verboseIndex, 1);
+      }
+    }
+
+    const testPatterns =
+      args.length > 0
+        ? args.map((arg) => `integration-tests/${arg}.test.js`)
+        : ['integration-tests/*.test.js'];
+    const testFiles = glob.sync(testPatterns, { cwd: rootDir, absolute: true });
+
+    for (const testFile of testFiles) {
+      const testFileName = basename(testFile);
+      console.log(`\tFound test file: ${testFileName}`);
+    }
+
+    const MAX_RETRIES = 3;
+    let allTestsPassed = true;
+
+    for (const testFile of testFiles) {
+      const testFileName = basename(testFile);
+      const testFileDir = join(runDir, testFileName);
+      mkdirSync(testFileDir, { recursive: true });
+
+      console.log(
+        `------------- Running test file: ${testFileName} ------------------------------`,
+      );
+
+      let attempt = 0;
+      let testFilePassed = false;
+      let lastStdout = [];
+      let lastStderr = [];
+
+      while (attempt < MAX_RETRIES && !testFilePassed) {
+        attempt++;
+        if (attempt > 1) {
+          console.log(
+            `--- Retrying ${testFileName} (attempt ${attempt} of ${MAX_RETRIES}) ---`,
+          );
+        }
+
+        const nodeArgs = ['--test'];
         if (verbose) {
-          process.stdout.write(data);
-        } else {
-          stdout.push(data);
+          nodeArgs.push('--test-reporter=spec');
         }
-        if (outputStream) {
-          outputStream.write(data);
-        }
-      });
+        nodeArgs.push(testFile);
 
-      child.stderr.on('data', (data) => {
-        if (verbose) {
-          process.stderr.write(data);
-        } else {
-          stderr.push(data);
-        }
-        if (outputStream) {
-          outputStream.write(data);
-        }
-      });
+        const child = spawn('node', nodeArgs, {
+          stdio: 'pipe',
+          env: {
+            ...process.env,
+            GEMINI_CLI_INTEGRATION_TEST: 'true',
+            INTEGRATION_TEST_FILE_DIR: testFileDir,
+            KEEP_OUTPUT: keepOutput.toString(),
+            VERBOSE: verbose.toString(),
+            TEST_FILE_NAME: testFileName,
+          },
+        });
 
-      const exitCode = await new Promise((resolve) => {
-        child.on('close', (code) => {
-          if (outputStream) {
-            outputStream.end(() => {
-              resolve(code);
-            });
+        let outputStream;
+        if (keepOutput) {
+          const outputFile = join(testFileDir, `output-attempt-${attempt}.log`);
+          outputStream = createWriteStream(outputFile);
+          console.log(`Output for ${testFileName} written to: ${outputFile}`);
+        }
+
+        const stdout = [];
+        const stderr = [];
+
+        child.stdout.on('data', (data) => {
+          if (verbose) {
+            process.stdout.write(data);
           } else {
-            resolve(code);
+            stdout.push(data);
+          }
+          if (outputStream) {
+            outputStream.write(data);
           }
         });
-      });
 
-      if (exitCode === 0) {
-        testFilePassed = true;
-      } else {
-        lastStdout = stdout;
-        lastStderr = stderr;
+        child.stderr.on('data', (data) => {
+          if (verbose) {
+            process.stderr.write(data);
+          } else {
+            stderr.push(data);
+          }
+          if (outputStream) {
+            outputStream.write(data);
+          }
+        });
+
+        const exitCode = await new Promise((resolve) => {
+          child.on('close', (code) => {
+            if (outputStream) {
+              outputStream.end(() => {
+                resolve(code);
+              });
+            } else {
+              resolve(code);
+            }
+          });
+        });
+
+        if (exitCode === 0) {
+          testFilePassed = true;
+        } else {
+          lastStdout = stdout;
+          lastStderr = stderr;
+        }
+      }
+
+      if (!testFilePassed) {
+        console.error(
+          `Test file failed after ${MAX_RETRIES} attempts: ${testFileName}`,
+        );
+        if (!verbose) {
+          process.stdout.write(Buffer.concat(lastStdout).toString('utf8'));
+          process.stderr.write(Buffer.concat(lastStderr).toString('utf8'));
+        }
+        allTestsPassed = false;
       }
     }
 
-    if (!testFilePassed) {
-      console.error(
-        `Test file failed after ${MAX_RETRIES} attempts: ${testFileName}`,
-      );
-      if (!verbose) {
-        process.stdout.write(Buffer.concat(lastStdout).toString('utf8'));
-        process.stderr.write(Buffer.concat(lastStderr).toString('utf8'));
-      }
-      allTestsPassed = false;
+    if (!keepOutput) {
+      rmSync(runDir, { recursive: true, force: true });
     }
-  }
 
-  if (!keepOutput) {
-    rmSync(runDir, { recursive: true, force: true });
-  }
-
-  if (!allTestsPassed) {
-    console.error('One or more test files failed.');
-  }
-
-  // --- Telemetry Teardown ---
-  if (collectorReady) {
+    if (!allTestsPassed) {
+      console.error('One or more test files failed.');
+      process.exit(1);
+    }
+  } finally {
     console.log('Shutting down local telemetry collector for tests.');
     collectorProcess.kill();
-  }
-  // --- End Telemetry Teardown ---
-
-  if (!allTestsPassed) {
-    process.exit(1);
   }
 }
 
