@@ -5,15 +5,79 @@
  */
 
 import { spawnSync, spawn } from 'child_process';
-import { mkdirSync, rmSync, createWriteStream } from 'fs';
+import { mkdirSync, rmSync, createWriteStream, writeFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
+import {
+  ensureBinary,
+  waitForPort,
+  OTEL_DIR,
+  fileExists,
+} from '../scripts/telemetry_utils.js';
 
 async function main() {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const rootDir = join(__dirname, '..');
   const integrationTestsDir = join(rootDir, '.integration-tests');
+
+  // --- Telemetry Setup ---
+  console.log('Setting up local telemetry environment for tests...');
+  if (!fileExists(OTEL_DIR)) {
+    mkdirSync(OTEL_DIR, { recursive: true });
+  }
+
+  const otelcolPath = await ensureBinary(
+    'otelcol-contrib',
+    'open-telemetry/opentelemetry-collector-releases',
+    (version, platform, arch, ext) =>
+      `otelcol-contrib_${version}_${platform}_${arch}.${ext}`,
+    'otelcol-contrib',
+    false,
+  );
+
+  if (!otelcolPath) {
+    console.error('Could not get otelcol-contrib binary. Exiting.');
+    process.exit(1);
+  }
+
+  const otelConfigFile = join(OTEL_DIR, 'collector-config.yaml');
+  const otelConfigContent = `
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "localhost:4317"
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [debug]
+`;
+  writeFileSync(otelConfigFile, otelConfigContent);
+
+  const collectorProcess = spawn(otelcolPath, ['--config', otelConfigFile], {
+    stdio: 'pipe',
+  });
+
+  const collectorLogStream = createWriteStream(join(OTEL_DIR, 'collector.log'));
+  collectorProcess.stdout.pipe(collectorLogStream);
+  collectorProcess.stderr.pipe(collectorLogStream);
+
+  let collectorReady = false;
+  try {
+    await waitForPort(4317, 20000);
+    collectorReady = true;
+    console.log('Local telemetry collector is running for tests.');
+  } catch (e) {
+    console.error('Failed to start telemetry collector:', e);
+    collectorProcess.kill();
+    process.exit(1);
+  }
+  // --- End Telemetry Setup ---
 
   if (process.env.GEMINI_SANDBOX === 'docker' && !process.env.IS_DOCKER) {
     console.log('Building sandbox for Docker...');
@@ -174,6 +238,16 @@ async function main() {
 
   if (!allTestsPassed) {
     console.error('One or more test files failed.');
+  }
+
+  // --- Telemetry Teardown ---
+  if (collectorReady) {
+    console.log('Shutting down local telemetry collector for tests.');
+    collectorProcess.kill();
+  }
+  // --- End Telemetry Teardown ---
+
+  if (!allTestsPassed) {
     process.exit(1);
   }
 }
