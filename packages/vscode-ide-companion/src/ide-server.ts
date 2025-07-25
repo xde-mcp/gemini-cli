@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 const MCP_SESSION_ID_HEADER = 'mcp-session-id';
 const IDE_SERVER_PORT_ENV_VAR = 'GEMINI_CLI_IDE_SERVER_PORT';
+const MAX_SELECTED_TEXT_LENGTH = 16384; // 16 KiB limit
 
 function sendOpenFilesChangedNotification(
   transport: StreamableHTTPServerTransport,
@@ -30,6 +31,19 @@ function sendOpenFilesChangedNotification(
     editor && editor.document.uri.scheme === 'file'
       ? editor.document.uri.fsPath
       : '';
+  const selection = editor?.selection;
+  const cursor = selection
+    ? {
+        // This value is a zero-based index, but the vscode IDE is one-based.
+        line: selection.active.line + 1,
+        character: selection.active.character,
+      }
+    : undefined;
+  let selectedText = editor?.document.getText(selection) ?? undefined;
+  if (selectedText && selectedText.length > MAX_SELECTED_TEXT_LENGTH) {
+    selectedText =
+      selectedText.substring(0, MAX_SELECTED_TEXT_LENGTH) + '... [TRUNCATED]';
+  }
   const notification: JSONRPCNotification = {
     jsonrpc: '2.0',
     method: 'ide/openFilesChanged',
@@ -38,6 +52,8 @@ function sendOpenFilesChangedNotification(
       recentOpenFiles: recentFilesManager.recentFiles.filter(
         (file) => file.filePath !== filePath,
       ),
+      cursor,
+      selectedText,
     },
   };
   log(
@@ -70,7 +86,7 @@ export class IDEServer {
     const mcpServer = createMcpServer();
 
     const recentFilesManager = new RecentFilesManager(context);
-    const disposable = recentFilesManager.onDidChange(() => {
+    const onDidChangeSubscription = recentFilesManager.onDidChange(() => {
       for (const transport of Object.values(transports)) {
         sendOpenFilesChangedNotification(
           transport,
@@ -79,7 +95,7 @@ export class IDEServer {
         );
       }
     });
-    context.subscriptions.push(disposable);
+    context.subscriptions.push(onDidChangeSubscription);
 
     app.post('/mcp', async (req: Request, res: Response) => {
       const sessionId = req.headers[MCP_SESSION_ID_HEADER] as
