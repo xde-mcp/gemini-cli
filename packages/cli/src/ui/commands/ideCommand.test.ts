@@ -139,7 +139,8 @@ describe('ideCommand', () => {
       vi.mocked(mockConfig.getCurrentIde).mockReturnValue(SupportedIDE.VSCode);
       vi.mocked(core.getIdeInstaller).mockReturnValue({
         install: mockInstall,
-      } as any);
+        isInstalled: vi.fn(),
+      });
       platformSpy.mockReturnValue('linux');
     });
 
