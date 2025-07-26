@@ -76,6 +76,29 @@ describe('FileCommandLoader', () => {
     expect(command.name).toBe('test');
   });
 
+  it('loads commands from a symlinked subdirectory', async () => {
+    const userCommandsDir = getUserCommandsDir();
+    const realNamespacedDir = '/real/namespaced-commands';
+    mock({
+      [userCommandsDir]: {
+        namespaced: mock.symlink({
+          path: realNamespacedDir,
+        }),
+      },
+      [realNamespacedDir]: {
+        'my-test.toml': 'prompt = "This is a test prompt"',
+      },
+    });
+
+    const loader = new FileCommandLoader(null as unknown as Config);
+    const commands = await loader.loadCommands(signal);
+
+    expect(commands).toHaveLength(1);
+    const command = commands[0];
+    expect(command).toBeDefined();
+    expect(command.name).toBe('namespaced:my-test');
+  });
+
   it('loads multiple commands', async () => {
     const userCommandsDir = getUserCommandsDir();
     mock({
